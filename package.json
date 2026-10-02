@@ -1,11 +1,12 @@
 {
   "name": "pi-context-prune",
-  "version": "2.1.1-local.1",
+  "version": "2.1.1-local.2",
   "description": "Pi extension package for pruning future context while preserving original tool-call history.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": "./dist/index.js",
   "files": [
+    "index.js",
     "dist/",
     "README.md",
     "LICENSE"
@@ -31,7 +32,7 @@
   "homepage": "https://github.com/championswimmer/pi-context-prune#readme",
   "pi": {
     "extensions": [
-      "./dist/index.js"
+      "./index.js"
     ]
   },
   "peerDependencies": {

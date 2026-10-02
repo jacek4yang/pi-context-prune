@@ -18,10 +18,11 @@ const parsedPackOutput = JSON.parse(packOutput);
 // npm 12 keys pack results by package name; older npm returns an array.
 const packResults = Array.isArray(parsedPackOutput) ? parsedPackOutput : Object.values(parsedPackOutput);
 
-assert.deepEqual(packageJson.pi?.extensions, ["./dist/index.js"]);
+assert.deepEqual(packageJson.pi?.extensions, ["./index.js"]);
 assert.equal(packResults.length, 1, "expected one npm pack result");
 
 const publishedFiles = new Set(packResults[0].files.map(({ path }) => path));
+assert(publishedFiles.has("index.js"), "root index.js is missing from the package");
 assert(publishedFiles.has("dist/index.js"), "dist/index.js is missing from the package");
 assert(
   publishedFiles.has("dist/index.js.map"),
