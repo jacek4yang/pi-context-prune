@@ -16,7 +16,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./src/config.js";
 import { captureBatch, captureUnindexedBatchesFromSession, groupBatchesByMode } from "./src/batch-capture.js";
-import { summarizeBatch, summarizeBatches } from "./src/summarizer.js";
+import { compactionBoundary } from "./src/boundary.js";
+import { PruneRetryGuard, pruneFingerprint } from "./src/retry-guard.js";
+import { resolveModel, summarizeBatch, summarizeBatches } from "./src/summarizer.js";
 import { ToolCallIndexer } from "./src/indexer.js";
 import { pruneMessages } from "./src/pruner.js";
 import { annotateWithUnprunedCount, countUnprunedToolCalls } from "./src/reminder.js";
@@ -59,11 +61,15 @@ export default function (pi: ExtensionAPI) {
   // may trigger an agent turn before ours has run (load order), so the context hook
   // hydrates on demand as a fallback — otherwise that turn would go out unpruned.
   let hydrated = false;
+  let branchEpoch = 0;
+  const retryGuard = new PruneRetryGuard();
   const hydrateFromSession = (ctx: ExtensionContext) => {
     indexer.reconstructFromSession(ctx);
     statsAccum.reconstructFromSession(ctx);
     frontier.reconstructFromSession(ctx);
     hydrated = true;
+    branchEpoch++;
+    retryGuard.reset();
   };
 
   // Pending batches — accumulated until the prune trigger fires
@@ -78,7 +84,7 @@ export default function (pi: ExtensionAPI) {
 
   type FlushResult =
     | { ok: true; reason: "flushed" | "skipped-oversized"; batchCount: number; toolCallCount: number; rawCharCount: number; summaryCharCount: number }
-    | { ok: false; reason: "empty" | "already-flushing" | "summarizer-failed" | "stale-context" | "failed" | "aborted"; error?: string };
+    | { ok: false; reason: "empty" | "already-flushing" | "summarizer-failed" | "retry-suppressed" | "stale-context" | "failed" | "aborted"; error?: string };
 
   type SessionAppender = {
     appendCustomEntry(customType: string, data?: unknown): string;
@@ -144,24 +150,20 @@ export default function (pi: ExtensionAPI) {
       timestamp: batch.timestamp,
     }));
 
+    appendEntry(CUSTOM_TYPE_INDEX, { toolCalls: records } as IndexEntryData);
     for (const record of records) {
       indexer.getIndex().set(record.toolCallId, record);
     }
-
-    appendEntry(CUSTOM_TYPE_INDEX, { toolCalls: records } as IndexEntryData);
   };
 
   // ── Helper: capture + trim + group pending batches (no LLM work) ──────────
   // Exposed to commands.ts via registerCommands so /pruner now can preview the
   // queue before opening the multi-row progress overlay.
   const capturePendingBatches = (ctx: any): CapturedBatch[] => {
-    let batches: CapturedBatch[] = [];
-    try {
-      const branch = ctx.sessionManager.getBranch();
-      batches = captureUnindexedBatchesFromSession(branch, indexer, [CONTEXT_PRUNE_TOOL_NAME]);
-    } catch {
-      batches = pendingBatches.slice();
-    }
+    // The persisted branch is authoritative. Falling back to queued batches on
+    // a stale/malformed branch could resurrect the pre-compaction prefix.
+    const branch = ctx.sessionManager.getBranch();
+    let batches = captureUnindexedBatchesFromSession(branch, indexer, [CONTEXT_PRUNE_TOOL_NAME]);
     batches = batches
       .map((batch) => trimBatchToPendingRange(batch))
       .filter((batch): batch is CapturedBatch => batch !== null);
@@ -179,14 +181,52 @@ export default function (pi: ExtensionAPI) {
   const flushPending = async (ctx: any, options: FlushOptions = {}): Promise<FlushResult> => {
     if (isFlushing) return { ok: false, reason: "already-flushing" };
 
-    // Use pre-captured batches if provided (avoids double-capture when the
-    // caller previewed the queue before opening the progress overlay).
-    let batches: CapturedBatch[] = options.previewedBatches ?? capturePendingBatches(ctx);
+    // A UI preview is not authority: compaction/tree navigation can happen
+    // between preview and execution. Always reselect from the current branch.
+    const batches = capturePendingBatches(ctx);
 
     if (batches.length === 0) return { ok: false, reason: "empty" };
 
     // Bail out before we drain pendingBatches so they don't need restoring.
     if (options.signal?.aborted) return { ok: false, reason: "aborted" };
+
+    const epoch = branchEpoch;
+    const originLeaf = ctx.sessionManager.getLeafId();
+    const scope = () => {
+      const branch = ctx.sessionManager.getBranch();
+      const model = resolveModel(currentConfig.value, ctx);
+      return {
+        session: ctx.sessionManager.getSessionId(),
+        boundary: compactionBoundary(branch).id,
+        model: [model?.provider, model?.api, model?.id, model?.baseUrl],
+        main: [ctx.model?.provider, ctx.model?.api, ctx.model?.id, ctx.model?.baseUrl],
+        thinking: currentConfig.value.summarizerThinking,
+      };
+    };
+    const owner = scope();
+    const key = (range: CapturedBatch[]) =>
+      pruneFingerprint({
+        ...owner,
+        range: range.map((b) => b.toolCalls.map((tc) => tc.toolCallId)),
+      });
+    if (retryGuard.blocked(key(batches))) {
+      return {
+        ok: false,
+        reason: "retry-suppressed",
+        error: "Same failed prune range; no state was changed. Change the model/boundary/range or reload after repair. " +
+          "Transient errors retry after 60s. Fingerprint: " + key(batches).slice(0, 12),
+      };
+    }
+    let failure: unknown;
+    const onFailure = (error: unknown) => {
+      failure = error;
+    };
+    const assertCurrent = () => {
+      if (epoch !== branchEpoch || pruneFingerprint(scope()) !== pruneFingerprint(owner) ||
+          (originLeaf && !ctx.sessionManager.getBranch().some((e: { id: string }) => e.id === originLeaf)))
+        throw new Error("This extension ctx is stale: pruning boundary/branch changed");
+      if (options.signal?.aborted) throw new Error("Pruning aborted before commit");
+    };
 
     // Draining the queue since we've captured the state via session or slice.
     // We drain BEFORE the await so concurrent calls (though guarded by isFlushing)
@@ -245,6 +285,7 @@ export default function (pi: ExtensionAPI) {
           options.onProgress(i, batches.length, batches[i], "start");
           const r = await summarizeBatch(batches[i], currentConfig.value, ctx, {
             signal: options.signal,
+            onFailure,
             onUsage: (response) => onUsage(batches[i], response),
             onTextProgress: (receivedChars) => {
               reportBatchTextProgress(i, batches.length, batches[i], receivedChars);
@@ -257,10 +298,13 @@ export default function (pi: ExtensionAPI) {
         // Parallel — one LLM call per batch, all in flight simultaneously.
         results = await summarizeBatches(batches, currentConfig.value, ctx, {
           onBatchTextProgress: reportBatchTextProgress,
+          onFailure,
           onUsage,
           signal: options.signal,
         });
       }
+
+      assertCurrent();
 
       // Process results in order; stop at first null (individual call failure).
       // Batches before the first failure are persisted; remaining are restored to
@@ -273,6 +317,7 @@ export default function (pi: ExtensionAPI) {
       let firstFailureIndex = -1;
 
       for (let i = 0; i < batches.length; i++) {
+        assertCurrent();
         const result = results[i];
         if (!result) {
           firstFailureIndex = i;
@@ -326,7 +371,9 @@ export default function (pi: ExtensionAPI) {
 
       // Restore unprocessed batches (those at and after the first failure)
       if (firstFailureIndex >= 0) {
-        restoreBatches(batches.slice(firstFailureIndex));
+        const remaining = batches.slice(firstFailureIndex);
+        restoreBatches(remaining);
+        retryGuard.fail(key(remaining), failure);
       }
 
       if (processedBatches.length === 0) {
@@ -397,6 +444,7 @@ export default function (pi: ExtensionAPI) {
       if (isStaleContextError(err)) {
         return { ok: false, reason: "stale-context", error: errorMessage(err) };
       }
+      retryGuard.fail(key(batches), err);
       safeNotify(ctx, `pruner: summarization failed: ${errorMessage(err)}`, "error");
       return { ok: false, reason: "failed", error: errorMessage(err) };
     } finally {

@@ -385,6 +385,8 @@ export interface FlushOptions {
 
 /** Options for a single summarizeBatch() call. */
 export interface SummarizeBatchOptions {
+  /** Failure classification for bounded no-progress retries; never advances frontier. */
+  onFailure?: (error: unknown) => void;
   /** Reports a final provider response once, even when its summary cannot be used. */
   onUsage?: (response: import("@earendil-works/pi-ai").AssistantMessage) => void;
   /** Receives the number of summary text characters streamed so far. */
@@ -398,6 +400,7 @@ export interface SummarizeBatchOptions {
 
 /** Options for summarizeBatches() when callers want live per-batch text progress. */
 export interface SummarizeBatchesOptions {
+  onFailure?: (error: unknown) => void;
   /** Reports each completed provider call independently of batch persistence. */
   onUsage?: (batch: CapturedBatch, response: import("@earendil-works/pi-ai").AssistantMessage) => void;
   /** Receives streamed summary text character counts for each batch. */

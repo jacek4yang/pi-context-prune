@@ -1,5 +1,7 @@
 # pi-context-prune
 
+Local checkpoint-boundary/retry patch: see [native boundaries](docs/native-boundaries.md).
+
 [![npm version](https://img.shields.io/npm/v/pi-context-prune?style=flat-square)](https://www.npmjs.com/package/pi-context-prune)
 [![npm downloads](https://img.shields.io/npm/dm/pi-context-prune?style=flat-square)](https://www.npmjs.com/package/pi-context-prune)
 

@@ -90,14 +90,12 @@ export async function summarizeBatch(
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) {
       const authMessage = "error" in auth ? auth.error : "authentication failed";
-      ctx.ui.notify(`pruner: summarization failed: ${authMessage}`, "error");
-      return null;
+      throw new Error(authMessage);
     }
 
     const provider = ctx.modelRegistry.getProvider(model.provider);
     if (!provider) {
-      ctx.ui.notify(`pruner: summarization failed: unknown provider \"${model.provider}\"`, "error");
-      return null;
+      throw new Error(`unknown provider "${model.provider}"`);
     }
 
     const serialized = serializeBatchForSummarizer(batch);
@@ -180,6 +178,7 @@ export async function summarizeBatch(
     // Propagate abort errors upward so flushPending can check signal.aborted
     // and return { ok: false, reason: "aborted" } without showing a UI error.
     if (options.signal?.aborted) throw err;
+    options.onFailure?.(err);
     ctx.ui.notify(
       `pruner: summarization failed: ${err.message}`,
       "error"
@@ -213,6 +212,7 @@ export async function summarizeBatches(
     return [
       await summarizeBatch(batches[0], config, ctx, {
         signal: options.signal,
+        onFailure: options.onFailure,
         onUsage: (response) => options.onUsage?.(batches[0], response),
         onTextProgress: (receivedChars) => {
           options.onBatchTextProgress?.(0, 1, batches[0], receivedChars);
@@ -227,6 +227,7 @@ export async function summarizeBatches(
     batches.map((batch, index) =>
       summarizeBatch(batch, config, ctx, {
         signal: options.signal,
+        onFailure: options.onFailure,
         onUsage: (response) => options.onUsage?.(batch, response),
         onTextProgress: (receivedChars) => {
           options.onBatchTextProgress?.(index, batches.length, batch, receivedChars);

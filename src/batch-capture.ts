@@ -1,4 +1,5 @@
 import type { CapturedBatch, CapturedToolCall, BatchingMode } from "./types.js";
+import { compactionBoundary } from "./boundary.js";
 
 /**
  * Converts turn_end event data into a CapturedBatch.
@@ -65,8 +66,9 @@ export function captureUnindexedBatchesFromSession(
 ): CapturedBatch[] {
   // branch is SessionEntry[]. Each message entry has { type: "message", message: AgentMessage }.
   // We must unwrap the SessionEntry wrapper before accessing role/toolCallId.
+  const { start } = compactionBoundary(branch);
   const resultMap = new Map<string, any>();
-  for (const entry of branch) {
+  for (const entry of branch.slice(start)) {
     if (entry.type !== "message") continue;
     const m = entry.message;
     if (m.role === "toolResult" && m.toolCallId) {
@@ -88,7 +90,8 @@ export function captureUnindexedBatchesFromSession(
   // a single user → final-agent-message span when batchingMode === "agent-message".
   let userTurnGroup = 0;
 
-  for (const entry of branch) {
+  for (let index = 0; index < branch.length; index++) {
+    const entry = branch[index];
     if (entry.type !== "message") continue;
     const msg = entry.message;
 
@@ -103,6 +106,8 @@ export function captureUnindexedBatchesFromSession(
 
     // Stable turn index: count every assistant message regardless of pruning state
     const currentTurnIndex = turnCounter++;
+    // Keep global turn numbering, but never summarize the opaque prefix.
+    if (index < start) continue;
 
     const content = Array.isArray(msg.content) ? msg.content : [];
     const toolCallBlocks = content.filter((c: any) => c.type === "toolCall");

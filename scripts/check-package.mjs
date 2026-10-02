@@ -14,7 +14,9 @@ const packOutput = execFileSync(
   ["pack", "--dry-run", "--json", "--ignore-scripts"],
   { cwd: packageRoot, encoding: "utf8" },
 );
-const packResults = JSON.parse(packOutput);
+const parsedPackOutput = JSON.parse(packOutput);
+// npm 12 keys pack results by package name; older npm returns an array.
+const packResults = Array.isArray(parsedPackOutput) ? parsedPackOutput : Object.values(parsedPackOutput);
 
 assert.deepEqual(packageJson.pi?.extensions, ["./dist/index.js"]);
 assert.equal(packResults.length, 1, "expected one npm pack result");
