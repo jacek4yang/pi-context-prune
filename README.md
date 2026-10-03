@@ -1,13 +1,29 @@
 # pi-context-prune
 
-Local checkpoint-boundary/retry patch: see [native boundaries](docs/native-boundaries.md).
+Maintained Pi 1.0-compatible fork of [championswimmer/pi-context-prune](https://github.com/championswimmer/pi-context-prune), with native-checkpoint boundaries and retry isolation. Upstream MIT attribution is preserved. The npm badges below describe **upstream**, not this fork; no maintained-fork npm release is implied.
+
+## Maintained installation and responsibilities
+
+```sh
+pi install git:github.com/jacek4yang/pi-context-prune
+```
+
+This unpinned source tracks our default branch; do not install it alongside the upstream npm/Git package. Reload or restart Pi after updating. Pi 1.0.0 is the integration-tested baseline; the committed bundle and root entry support Pi's Git package layout.
+
+- `context_prune` summarizes useful completed tool batches; `context_tree_query` retrieves original evidence. Neither replaces long-task checkpoints or the task list.
+- Native compaction owns long-context continuation. Typed compaction boundaries and `firstKeptEntryId` prevent old pre-checkpoint output from being summarized again.
+- Session/branch/source checks reject stale auxiliary results; failed work has cooldown rather than an independent retry storm.
+- Auxiliary summarizer requests never inherit the main model's native reasoning checkpoint. Configure the summarizer independently (this workstation uses Luna, medium).
+- Use pruning after a meaningful batch, not every short call or already concise summary. Bytes saved are not automatically token/billing savings; prefix-cache churn matters.
+
+See [native boundaries](docs/native-boundaries.md) for compatibility details. Validate with `npm run check` (build, packaged-entry check, boundary/usage regressions). The remaining upstream usage documentation is retained below; upstream installation examples are alternatives, not an instruction to replace this maintained fork.
 
 [![npm version](https://img.shields.io/npm/v/pi-context-prune?style=flat-square)](https://www.npmjs.com/package/pi-context-prune)
 [![npm downloads](https://img.shields.io/npm/dm/pi-context-prune?style=flat-square)](https://www.npmjs.com/package/pi-context-prune)
 
 A [Pi coding-agent](https://github.com/badlogic/pi-mono) extension that **summarizes completed tool-call batches**, prunes raw tool outputs from future LLM context, and exposes a `context_tree_query` escape hatch to recover any original output on demand.
 
-## Check out my other Pi extensions
+## Upstream author's other Pi extensions
 
 - [![pi-auto-theme](https://img.shields.io/badge/🎨_pi--auto--theme-blue?style=flat-square)](https://github.com/championswimmer/pi-auto-theme) — Auto-syncs Pi theme with OS dark/light mode.
 - [![pi-cache-graph](https://img.shields.io/badge/📊_pi--cache--graph-orange?style=flat-square)](https://github.com/championswimmer/pi-cache-graph) — Real-time prompt cache hit rates and token metrics.
@@ -33,7 +49,9 @@ As long agent sessions grow, every tool call adds token-heavy output to the cont
 
 The extension does append its own custom summary/index/frontier/stats entries to the session, but it does **not** rewrite or delete the original tool-result messages. Pruning only changes how future request context is assembled.
 
-## Installation
+## Upstream installation alternatives
+
+For this maintained stack use the unpinned Git command above. The npm package and championswimmer Git source below are upstream alternatives; install only one implementation.
 
 Requires Pi `@earendil-works/pi-coding-agent` **0.86.0 or later** for session usage entries.
 
