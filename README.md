@@ -8,7 +8,7 @@ Maintained Pi 1.0-compatible fork of [championswimmer/pi-context-prune](https://
 pi install git:github.com/jacek4yang/pi-context-prune
 ```
 
-This unpinned source tracks our default branch; do not install it alongside the upstream npm/Git package. Reload or restart Pi after updating. Pi 1.0.0 is the integration-tested baseline; the committed bundle and root entry support Pi's Git package layout.
+This unpinned source tracks our default branch; do not install it alongside the upstream npm/Git package. Reload or restart Pi after updating. Pi 1.0.1 is the integration-tested baseline; the committed bundle and root entry support Pi's Git package layout.
 
 - `context_prune` summarizes useful completed tool batches; `context_tree_query` retrieves original evidence. Neither replaces long-task checkpoints or the task list.
 - Native compaction owns long-context continuation. Typed compaction boundaries and `firstKeptEntryId` prevent old pre-checkpoint output from being summarized again.
