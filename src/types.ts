@@ -417,8 +417,11 @@ export interface SummarizeBatchesOptions {
  */
 export interface SummarizeResult {
   summaryText: string;
-  /** Usage data from the LLM response (tokens + cost) */
-  usage: {
+  /** Discarded streamed text: never persist a partial summary. */
+  oversized?: boolean;
+  observedChars?: number;
+  /** Usage may be unavailable when an interrupted provider rejects its result. */
+  usage?: {
     input: number;
     output: number;
     cacheRead: number;

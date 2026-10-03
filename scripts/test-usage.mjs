@@ -105,4 +105,18 @@ test('missing appendUsage is a silent no-op; throwing appendUsage notifies once'
   assert.equal(errors.length, 1);
 });
 
+test('runaway streamed summaries abort early, discard partial text and still report usage', async () => {
+  const {ctx}=context([]); let emitted=0; let signal; const calls=[];
+  const b=batch(); b.toolCalls[0].resultText='x'.repeat(10000);
+  ctx.modelRegistry.getProvider=()=>({stream:(_m,_c,opts)=>{
+    signal=opts.signal;
+    return {async *[Symbol.asyncIterator](){
+      while(!signal?.aborted && emitted<100){emitted++; yield {type:'text_delta',partial:{content:[{type:'text',text:'z'.repeat(emitted*600)}]}};}
+    },result:async()=>({...response(signal?.aborted?'aborted':'stop'),content:[{type:'text',text:'z'.repeat(emitted*600)}]})};
+  }});
+  const result=await summarizeBatch(b,config,ctx,{onUsage:r=>calls.push(r)});
+  assert.equal(signal?.aborted,true); assert(emitted<10); assert.equal(result.oversized,true);
+  assert.equal(result.summaryText,''); assert(result.observedChars>=1500); assert.equal(calls.length,1);
+});
+
 process.on('exit', () => rmSync(temp, { recursive: true, force: true }));

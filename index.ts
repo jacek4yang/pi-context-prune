@@ -328,10 +328,10 @@ export default function (pi: ExtensionAPI) {
         const batchRawCharCount = batch.toolCalls.reduce((s, tc) => s + tc.resultText.length, 0);
         const summaryRefs = indexer.allocateSummaryRefs(batch);
         const summaryText = wrapSummaryForContext(result.summaryText + formatSummaryToolCallRefs(summaryRefs));
-        const shouldSkipOversized = summaryText.length > batchRawCharCount;
+        const shouldSkipOversized = result.oversized || summaryText.length > batchRawCharCount;
 
         totalRawCharCount += batchRawCharCount;
-        totalSummaryCharCount += summaryText.length;
+        totalSummaryCharCount += result.observedChars ?? summaryText.length;
         totalToolCallCount += batch.toolCalls.length;
 
         const batchDetails = makeSummaryDetails(batch, summaryRefs);
@@ -416,10 +416,11 @@ export default function (pi: ExtensionAPI) {
       if (currentConfig.value.notifySkipped) {
         for (const batch of oversizedBatches) {
           const batchRaw = batch.toolCalls.reduce((s, tc) => s + tc.resultText.length, 0);
-          const batchSummaryLen = results[batches.indexOf(batch)]?.summaryText.length ?? 0;
+          const skipped = results[batches.indexOf(batch)];
+          const batchSummaryLen = skipped?.observedChars ?? skipped?.summaryText.length ?? 0;
           safeNotify(
             ctx,
-            `pruner: skipped pruning turn ${batch.turnIndex} (${batch.toolCalls.length} tool call${batch.toolCalls.length === 1 ? "" : "s"}) — summary was ${batchSummaryLen} chars vs ${batchRaw} raw chars; frontier advanced past this range`,
+            `pruner: skipped pruning turn ${batch.turnIndex} (${batch.toolCalls.length} tool call${batch.toolCalls.length === 1 ? "" : "s"}) — summary hit its budget or exceeded source (${batchSummaryLen} received chars vs ${batchRaw} raw chars); frontier advanced past this range`,
             "warning"
           );
         }
