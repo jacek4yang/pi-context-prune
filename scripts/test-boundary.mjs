@@ -137,7 +137,7 @@ async function harness(sm = SessionManager.inMemory(), mode = "agentic-auto") {
     tools = new Map(),
     requests = [],
     notifications = [];
-  let fail, during;
+  let fail, during, oversized;
   const ctx = {
     sessionManager: sm,
     hasUI: false,
@@ -176,6 +176,7 @@ async function harness(sm = SessionManager.inMemory(), mode = "agentic-auto") {
               async *[Symbol.asyncIterator]() {
                 if (during) await during();
                 if (fail) throw new Error(fail);
+                if (oversized) yield {type:"text_delta",partial:assistant([{type:"text",text:"runaway".repeat(1000)}])};
                 const values =
                   JSON.stringify(context).match(/VALUE_[A-Za-z0-9_-]+/g) ?? [];
                 yield {
@@ -242,6 +243,7 @@ async function harness(sm = SessionManager.inMemory(), mode = "agentic-auto") {
     setDuring(fn) {
       during = fn;
     },
+    setOversized() { oversized = true; },
     async prune(signal) {
       return (
         await tools
@@ -269,6 +271,17 @@ async function harness(sm = SessionManager.inMemory(), mode = "agentic-auto") {
     },
   };
 }
+
+test("stream budget never commits a partial summary or repeats the attempted range", async () => {
+  const h = await harness(); addWork(h.sm,"budget"); h.setOversized();
+  assert.equal((await h.prune()).reason,"skipped-oversized");
+  assert.equal(h.summaries().length,0);
+  assert.equal(h.frontier().outcome,"skipped-oversized");
+  assert(h.requests[0].options.signal.aborted);
+  assert.equal((await h.prune()).reason,"empty");
+  assert.equal(h.requests.length,1);
+  assert(JSON.stringify(h.sm.getBranch()).includes("VALUE_budget"));
+});
 
 test("retry clock is bounded, transient failures recover, deterministic failures await changed state", () => {
   const guard = new PruneRetryGuard();

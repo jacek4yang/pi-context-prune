@@ -14,6 +14,7 @@ This unpinned source tracks our default branch; do not install it alongside the 
 - Native compaction owns long-context continuation. Typed compaction boundaries and `firstKeptEntryId` prevent old pre-checkpoint output from being summarized again.
 - Session/branch/source checks reject stale auxiliary results; failed work has cooldown rather than an independent retry storm.
 - Auxiliary summarizer requests never inherit the main model's native reasoning checkpoint. Configure the summarizer independently (this workstation uses Luna, medium).
+- Runaway visible summaries are cancelled at a batch-sized character budget (1,024–16,000 characters, never a token estimate). Partial summaries are discarded; originals remain, the existing attempted frontier advances, and no automatic retry starts. Provider-reported usage is retained when available; interrupted unknown usage is not zero. This does not cap pre-text reasoning or provider buffering.
 - Use pruning after a meaningful batch, not every short call or already concise summary. Bytes saved are not automatically token/billing savings; prefix-cache churn matters.
 
 See [native boundaries](docs/native-boundaries.md) for compatibility details. Validate with `npm run check` (build, packaged-entry check, boundary/usage regressions). The remaining upstream usage documentation is retained below; upstream installation examples are alternatives, not an instruction to replace this maintained fork.
