@@ -1,5 +1,7 @@
 # pi-context-prune
 
+Pi host peers are unrestricted (`*`). Users control host upgrades; required API/safety checks remain. Dev/CI versions pin reproducible tests, not runtime support. Untested versions are not guaranteed compatible.
+
 Maintained Pi 1.0-compatible fork of [championswimmer/pi-context-prune](https://github.com/championswimmer/pi-context-prune), with native-checkpoint boundaries and retry isolation. Upstream MIT attribution is preserved. The npm badges below describe **upstream**, not this fork; no maintained-fork npm release is implied.
 
 ## Maintained installation and responsibilities
